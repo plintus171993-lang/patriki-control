@@ -1,0 +1,240 @@
+name: Сборка APK «Патрики Контроль»
+
+on:
+  push:
+    paths: [".github/workflows/apk.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  APP_URL: "https://80-78-246-78.sslip.io/"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Создать проект Android
+        run: |
+          set -e
+          A=android
+          mkdir -p $A/app/src/main/java/ru/patriki/control \
+                   $A/app/src/main/res/drawable \
+                   $A/app/src/main/res/mipmap-anydpi-v26 \
+                   $A/app/src/main/res/values
+
+          cat > $A/settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "patriki-control-android"
+          include(":app")
+          EOF
+
+          cat > $A/build.gradle.kts <<'EOF'
+          plugins { id("com.android.application") version "8.5.2" apply false }
+          EOF
+
+          cat > $A/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2g
+          android.useAndroidX=true
+          EOF
+
+          cat > $A/app/build.gradle.kts <<'EOF'
+          plugins { id("com.android.application") }
+          val run = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+          android {
+              namespace = "ru.patriki.control"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "ru.patriki.control"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = run
+                  versionName = "1.0.$run"
+                  buildConfigField("String", "APP_URL", "\"" + (System.getenv("APP_URL") ?: "") + "\"")
+              }
+              buildFeatures { buildConfig = true }
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                      signingConfig = signingConfigs.getByName("debug")
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          cat > $A/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:label="Патрики"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
+                  android:allowBackup="false"
+                  android:usesCleartextTraffic="false"
+                  android:theme="@style/AppTheme">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > $A/app/src/main/res/values/colors.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="brand">#1F5C43</color>
+              <color name="cream">#F0ECE2</color>
+              <color name="brass">#D3A552</color>
+              <color name="page">#F3F4F1</color>
+          </resources>
+          EOF
+
+          cat > $A/app/src/main/res/values/themes.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:statusBarColor">@color/brand</item>
+                  <item name="android:navigationBarColor">@color/page</item>
+                  <item name="android:windowBackground">@color/page</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > $A/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/brand" />
+              <foreground android:drawable="@drawable/ic_fg" />
+          </adaptive-icon>
+          EOF
+
+          cat > $A/app/src/main/res/drawable/ic_fg.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="@color/cream"
+                  android:pathData="M38,31h32v30h-7v-23h-18v23h-7z" />
+              <path android:fillColor="@color/brass"
+                  android:pathData="M42,73h6v6h-6zM51,70h6v9h-6zM60,67h6v12h-6z" />
+          </vector>
+          EOF
+
+          cat > $A/app/src/main/java/ru/patriki/control/MainActivity.java <<'EOF'
+          package ru.patriki.control;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.webkit.WebResourceError;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+              private static final String APP_URL = BuildConfig.APP_URL;
+              private WebView web;
+
+              @Override
+              protected void onCreate(Bundle saved) {
+                  super.onCreate(saved);
+                  web = new WebView(this);
+                  WebSettings s = web.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setDatabaseEnabled(true);
+                  s.setCacheMode(WebSettings.LOAD_DEFAULT);
+                  s.setAllowFileAccess(false);
+                  web.setBackgroundColor(0xFFF3F4F1);
+                  web.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
+                          Uri u = r.getUrl();
+                          if (u.getHost() != null && u.getHost().equals(Uri.parse(APP_URL).getHost())) return false;
+                          try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch (Exception ignored) { }
+                          return true;
+                      }
+                      @Override
+                      public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
+                          if (r.isForMainFrame()) showOffline();
+                      }
+                  });
+                  setContentView(web);
+                  if (saved != null) web.restoreState(saved); else web.loadUrl(APP_URL);
+              }
+
+              private void showOffline() {
+                  String html = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                      + "<style>body{font-family:sans-serif;background:#F3F4F1;color:#1B221D;display:flex;min-height:90vh;"
+                      + "align-items:center;justify-content:center;text-align:center;padding:24px}"
+                      + "a{display:inline-block;margin-top:16px;background:#1F5C43;color:#fff;padding:12px 22px;"
+                      + "border-radius:8px;text-decoration:none}</style></head><body><div>"
+                      + "<h2>Нет связи с сервером</h2><p>Проверьте интернет и попробуйте ещё раз.</p>"
+                      + "<a href='" + APP_URL + "'>Повторить</a></div></body></html>";
+                  web.loadDataWithBaseURL(APP_URL, html, "text/html", "UTF-8", null);
+              }
+
+              @Override
+              protected void onSaveInstanceState(Bundle out) {
+                  super.onSaveInstanceState(out);
+                  web.saveState(out);
+              }
+
+              @Override
+              protected void onResume() { super.onResume(); web.onResume(); }
+
+              @Override
+              protected void onPause() { web.onPause(); super.onPause(); }
+
+              @Override
+              public void onBackPressed() {
+                  if (web.canGoBack()) web.goBack(); else super.onBackPressed();
+              }
+          }
+          EOF
+
+      - name: Собрать APK
+        run: |
+          gradle -p android :app:assembleRelease --no-daemon --stacktrace
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk out/patriki-control.apk
+          ls -la out
+
+      - name: Опубликовать APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: "Патрики Контроль ${{ github.run_number }}"
+          body: "Скачайте patriki-control.apk и установите на телефон."
+          files: out/patriki-control.apk
+          make_latest: true
